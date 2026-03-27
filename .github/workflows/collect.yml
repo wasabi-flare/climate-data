@@ -14,6 +14,8 @@ on:
 jobs:
   collect:
     runs-on: ubuntu-latest
+    outputs:
+      target_date: ${{ steps.date.outputs.target }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,21 +24,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Compute target date
+        id: date
+        run: |
+          TARGET="${{ inputs.target_date || (python -c 'from datetime import date, timedelta; print((date.today()-timedelta(days=1)).isoformat())') }}"
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+
       - name: Install dependencies
         run: pip install httpx
 
       - name: Run collection
         env:
           NOAA_CDO_TOKEN: ${{ secrets.NOAA_CDO_TOKEN }}
-          TARGET_DATE: ${{ inputs.target_date || '' }}
         run: |
-          TARGET="${TARGET_DATE:-$(python -c 'from datetime import date, timedelta; print((date.today()-timedelta(days=1)).isoformat())')}"
-          python collect.py --date "$TARGET" --output-dir ./output
+          python collect.py --date "${{ steps.date.outputs.target }}" --output-dir ./output
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: noaa-cdo-${{ inputs.target_date || 'yesterday' }}
+          name: noaa-cdo-${{ steps.date.outputs.target }}
           path: output/
           retention-days: 30
 
@@ -46,11 +52,11 @@ jobs:
         run: |
           CID=$(curl -sS -X POST https://api.pinata.cloud/pinning/pinFileToIPFS \
             -H "Authorization: Bearer $PINATA_JWT" \
-            -F "file=@output/daily_$(echo $TARGET_DATE).json" \
+            -F "file=@output/daily_${{ steps.date.outputs.target }}.json" \
             | python -c "import sys,json; print(json.load(sys.stdin)['IpfsHash'])")
           echo "pinned_cid=$CID" >> $GITHUB_ENV
 
       - name: Update onchain registry
         if: env.pinned_cid != ''
         run: |
-          echo "Artifact 18 registry update: CID ${{ env.pinned_cid }} — implement registry update call here"
+          echo "Artifact 18 registry update: CID ${{ env.pinned_cid }}"

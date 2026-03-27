@@ -76,7 +76,8 @@ def collect_daily(target_date: date, stations: list[str] | None = None) -> dict:
 def collect_monthly(year: int, month: int) -> dict:
     """Fetch monthly aggregates for a single month."""
     start = f"{year}-{month:02d}-01"
-    end   = f"{year}-{month:02d}-28"  # CDO clips to actual last day
+    import calendar
+    end   = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"  # CDO clips to actual last day
     results = {}
     for name, dataset_id in DATASETS.items():
         params = {
