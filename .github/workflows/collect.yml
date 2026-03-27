@@ -1,0 +1,56 @@
+name: NOAA CDO Daily Collection
+
+on:
+  schedule:
+    # Run at 00:30 UTC every day — targets previous day's data
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    # Allow manual trigger with optional date override
+    inputs:
+      target_date:
+        description: "Target date (YYYY-MM-DD), defaults to yesterday"
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install httpx
+
+      - name: Run collection
+        env:
+          NOAA_CDO_TOKEN: ${{ secrets.NOAA_CDO_TOKEN }}
+          TARGET_DATE: ${{ inputs.target_date || '' }}
+        run: |
+          TARGET="${TARGET_DATE:-$(python -c 'from datetime import date, timedelta; print((date.today()-timedelta(days=1)).isoformat())')}"
+          python collect.py --date "$TARGET" --output-dir ./output
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: noaa-cdo-${{ inputs.target_date || 'yesterday' }}
+          path: output/
+          retention-days: 30
+
+      - name: Pin to IPFS
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: |
+          CID=$(curl -sS -X POST https://api.pinata.cloud/pinning/pinFileToIPFS \
+            -H "Authorization: Bearer $PINATA_JWT" \
+            -F "file=@output/daily_$(echo $TARGET_DATE).json" \
+            | python -c "import sys,json; print(json.load(sys.stdin)['IpfsHash'])")
+          echo "pinned_cid=$CID" >> $GITHUB_ENV
+
+      - name: Update onchain registry
+        if: env.pinned_cid != ''
+        run: |
+          echo "Artifact 18 registry update: CID ${{ env.pinned_cid }} — implement registry update call here"
