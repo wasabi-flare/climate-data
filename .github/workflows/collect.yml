@@ -46,7 +46,7 @@ jobs:
           path: output/
           retention-days: 30
 
-      - name: Pin to IPFS
+      - name: Pin daily to IPFS
         env:
           PINATA_JWT: ${{ secrets.PINATA_JWT }}
         run: |
@@ -54,9 +54,21 @@ jobs:
             -H "Authorization: Bearer $PINATA_JWT" \
             -F "file=@output/daily_${{ steps.date.outputs.target }}.json" \
             | python -c "import sys,json; print(json.load(sys.stdin)['IpfsHash'])")
-          echo "pinned_cid=$CID" >> $GITHUB_ENV
+          echo "daily_cid=$CID" >> $GITHUB_ENV
+
+      - name: Pin monthly aggregate to IPFS
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: |
+          YYYY=$(echo "${{ steps.date.outputs.target }}" | cut -d- -f1)
+          MM=$(echo "${{ steps.date.outputs.target }}" | cut -d- -f2)
+          CID=$(curl -sS -X POST https://api.pinata.cloud/pinning/pinFileToIPFS \
+            -H "Authorization: Bearer $PINATA_JWT" \
+            -F "file=@output/monthly_${YYYY}_${MM}.json" \
+            | python -c "import sys,json; print(json.load(sys.stdin)['IpfsHash'])")
+          echo "monthly_cid=$CID" >> $GITHUB_ENV
 
       - name: Update onchain registry
-        if: env.pinned_cid != ''
+        if: env.daily_cid != ''
         run: |
-          echo "Artifact 18 registry update: CID ${{ env.pinned_cid }}"
+          echo "Artifact 18 registry update: daily CID ${{ env.daily_cid }}, monthly CID ${{ env.monthly_cid }}"
